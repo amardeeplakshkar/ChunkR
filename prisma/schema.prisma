@@ -1,0 +1,73 @@
+// prisma/schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model File {
+  id             String   @id @default(cuid())
+  name           String
+  originalName   String
+  mimeType       String
+  size           Int      // bytes
+  userId         String   // Clerk user ID
+  folderId       String?
+  folder         Folder?  @relation(fields: [folderId], references: [id])
+
+  // Telegram storage info
+  telegramFileId String   // file_id returned by Telegram
+  telegramMsgId  Int      // message_id in the channel
+  chatId         String   // Telegram channel/chat ID
+
+  // For large files split into parts
+  parts          FilePart[]
+  isMultipart    Boolean  @default(false)
+
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  deletedAt      DateTime?
+
+  @@index([userId])
+  @@index([folderId])
+}
+
+model FilePart {
+  id             String   @id @default(cuid())
+  fileId         String
+  file           File     @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  partNumber     Int
+  telegramFileId String
+  telegramMsgId  Int
+  chatId         String
+  size           Int
+
+  @@index([fileId])
+}
+
+model Folder {
+  id        String   @id @default(cuid())
+  name      String
+  userId    String
+  parentId  String?
+  parent    Folder?  @relation("FolderTree", fields: [parentId], references: [id])
+  children  Folder[] @relation("FolderTree")
+  files     File[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([parentId])
+}
+
+model StorageUsage {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  usedBytes BigInt   @default(0)
+  updatedAt DateTime @updatedAt
+}
