@@ -39,7 +39,7 @@ export async function uploadToTelegram(
   formData.append("chat_id", CHAT_ID);
   formData.append(
     "document",
-    new Blob([buffer], { type: mimeType }),
+    new Blob([new Uint8Array(buffer)], { type: mimeType }),
     filename
   );
   // Hide caption so the channel looks clean
@@ -57,13 +57,29 @@ export async function uploadToTelegram(
 
   const data = await res.json();
   const msg = data.result;
-  const doc = msg.document;
+
+  // Telegram returns different fields depending on the media type.
+  // We always use sendDocument, but for safety extract from whichever field exists.
+  const media =
+    msg.document ??
+    msg.video    ??
+    msg.audio    ??
+    msg.photo?.[msg.photo.length - 1] ?? // photo is an array of sizes
+    msg.animation ??
+    msg.voice ??
+    msg.video_note;
+
+  if (!media) {
+    throw new Error(
+      `Telegram upload succeeded but returned no media object. Full response: ${JSON.stringify(msg)}`
+    );
+  }
 
   return {
-    telegramFileId: doc.file_id,
+    telegramFileId: media.file_id,
     telegramMsgId: msg.message_id,
     chatId: String(CHAT_ID),
-    size: doc.file_size ?? buffer.byteLength,
+    size: media.file_size ?? buffer.byteLength,
   };
 }
 
@@ -81,7 +97,7 @@ export async function uploadMultipart(
   let partNumber = 0;
 
   while (offset < buffer.byteLength) {
-    const chunk = buffer.subarray(offset, offset + CHUNK_SIZE);
+    const chunk = Buffer.from(buffer.subarray(offset, offset + CHUNK_SIZE));
     const partName = `${filename}.part${String(partNumber).padStart(4, "0")}`;
     const result = await uploadToTelegram(chunk, partName, "application/octet-stream");
     parts.push(result);
